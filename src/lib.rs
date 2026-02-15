@@ -39,8 +39,17 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
             let method = parsed.method.unwrap_or("").to_string();
             let path = parsed.path.unwrap_or("/").to_string();
 
-            let req = Request::new(method.clone(), path.clone());
-            let handler = router.dispatch(&method, &path);
+            let mut req = Request::new(method.clone(), path.clone());
+
+            for h in parsed.headers.iter() {
+                req.headers.insert(
+                    h.name.to_lowercase(),
+                    String::from_utf8_lossy(h.value).to_string(),
+                );
+            }
+
+            let (handler, params) = router.dispatch(&method, &path);
+            req.params = params;
             let resp = handler(req).await;
 
             let _ = stream.write_all(resp.to_bytes().as_slice()).await;
