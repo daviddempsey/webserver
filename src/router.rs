@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -53,8 +54,14 @@ fn match_path(segments: &[Segment], path: &str) -> Option<HashMap<String, String
     Some(params)
 }
 
+struct StaticMount {
+    prefix: String,
+    root: PathBuf,
+}
+
 pub struct Router {
     routes: Vec<Route>,
+    statics: Vec<StaticMount>,
     middlewares: Vec<MiddlewareFn>,
 }
 
@@ -62,6 +69,7 @@ impl Router {
     pub fn new() -> Self {
         Self {
             routes: Vec::new(),
+            statics: Vec::new(),
             middlewares: Vec::new(),
         }
     }
@@ -107,6 +115,14 @@ impl Router {
         self.route("POST", path, handler);
     }
 
+    pub fn static_dir(&mut self, prefix: &str, dir: impl Into<PathBuf>) {
+        let prefix = prefix.trim_end_matches('/').to_string();
+        self.statics.push(StaticMount {
+            prefix,
+            root: dir.into(),
+        });
+    }
+
     pub(crate) fn dispatch(&self, method: &str, path: &str) -> (Handler, HashMap<String, String>) {
         for route in &self.routes {
             if route.method != method {
@@ -115,6 +131,29 @@ impl Router {
             if let Some(params) = match_path(&route.segments, path) {
                 let handler = middleware::chain(&self.middlewares, Arc::clone(&route.handler));
                 return (handler, params);
+            }
+        }
+
+        // Check static file mounts for GET requests
+        if method == "GET" {
+            for mount in &self.statics {
+                if let Some(file_path) = path
+                    .strip_prefix(&mount.prefix)
+                    .map(|p| p.strip_prefix('/').unwrap_or(p))
+                {
+                    let root = mount.root.clone();
+                    let file_path = file_path.to_string();
+                    let handler: Handler = Arc::new(move |_req| {
+                        let root = root.clone();
+                        let file_path = file_path.clone();
+                        Box::pin(async move { crate::static_files::serve(&root, &file_path).await })
+                            as Pin<Box<dyn Future<Output = Response> + Send>>
+                    });
+                    return (
+                        middleware::chain(&self.middlewares, handler),
+                        HashMap::new(),
+                    );
+                }
             }
         }
 

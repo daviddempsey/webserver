@@ -2,6 +2,7 @@ mod middleware;
 mod request;
 mod response;
 mod router;
+pub(crate) mod static_files;
 
 pub use middleware::Next;
 pub use request::Request;

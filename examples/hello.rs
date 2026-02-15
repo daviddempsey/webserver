@@ -70,6 +70,7 @@ async fn main() -> std::io::Result<()> {
     router.get("/users/:id", get_user);
     router.get("/search", search);
     router.post("/users", create_user);
+    router.static_dir("/static", "examples/public");
 
     println!("Listening on http://127.0.0.1:8080");
     webserver::run("127.0.0.1:8080", router).await
