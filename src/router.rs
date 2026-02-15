@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::error::IntoResponse;
 use crate::middleware::{self, Handler, MiddlewareFn, Next};
 use crate::{Request, Response};
 
@@ -84,13 +85,16 @@ impl Router {
         }));
     }
 
-    pub fn route<F, Fut>(&mut self, method: &str, path: &str, handler: F)
+    pub fn route<F, Fut, R>(&mut self, method: &str, path: &str, handler: F)
     where
         F: Fn(Request) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Response> + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: IntoResponse + 'static,
     {
         let handler: Handler = Arc::new(move |req| {
-            Box::pin(handler(req)) as Pin<Box<dyn Future<Output = Response> + Send>>
+            let fut = handler(req);
+            Box::pin(async move { fut.await.into_response() })
+                as Pin<Box<dyn Future<Output = Response> + Send>>
         });
         self.routes.push(Route {
             method: method.to_string(),
@@ -99,18 +103,20 @@ impl Router {
         });
     }
 
-    pub fn get<F, Fut>(&mut self, path: &str, handler: F)
+    pub fn get<F, Fut, R>(&mut self, path: &str, handler: F)
     where
         F: Fn(Request) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Response> + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: IntoResponse + 'static,
     {
         self.route("GET", path, handler);
     }
 
-    pub fn post<F, Fut>(&mut self, path: &str, handler: F)
+    pub fn post<F, Fut, R>(&mut self, path: &str, handler: F)
     where
         F: Fn(Request) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Response> + Send + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: IntoResponse + 'static,
     {
         self.route("POST", path, handler);
     }

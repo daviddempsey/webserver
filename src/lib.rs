@@ -1,9 +1,11 @@
+pub mod error;
 mod middleware;
 mod request;
 mod response;
 mod router;
 pub(crate) mod static_files;
 
+pub use error::Error;
 pub use middleware::Next;
 pub use request::Request;
 pub use response::Response;

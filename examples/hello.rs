@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use webserver::{Next, Request, Response, Router};
+use webserver::{Error, Next, Request, Response, Router};
 
 async fn logging(req: Request, next: Next) -> Response {
     let start = Instant::now();
@@ -48,17 +48,17 @@ async fn search(req: Request) -> Response {
     Response::json(200, &serde_json::json!({"query": q, "page": page}))
 }
 
-async fn create_user(req: Request) -> Response {
-    match req.json::<CreateUser>() {
-        Ok(input) => {
-            let user = User {
-                id: 1,
-                name: input.name,
-            };
-            Response::json(201, &user)
-        }
-        Err(_) => Response::json(400, &serde_json::json!({"error": "invalid JSON"})),
-    }
+async fn create_user(req: Request) -> Result<Response, Error> {
+    let input: CreateUser = req.json()?;
+    let user = User {
+        id: 1,
+        name: input.name,
+    };
+    Ok(Response::json(201, &user))
+}
+
+async fn fail(_req: Request) -> Result<Response, Error> {
+    Err(Error::not_found("this resource doesn't exist"))
 }
 
 #[tokio::main]
@@ -70,6 +70,7 @@ async fn main() -> std::io::Result<()> {
     router.get("/users/:id", get_user);
     router.get("/search", search);
     router.post("/users", create_user);
+    router.get("/fail", fail);
     router.static_dir("/static", "examples/public");
 
     println!("Listening on http://127.0.0.1:8080");
