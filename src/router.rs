@@ -121,6 +121,24 @@ impl Router {
         self.route("POST", path, handler);
     }
 
+    pub fn patch<F, Fut, R>(&mut self, path: &str, handler: F)
+    where
+        F: Fn(Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: IntoResponse + 'static,
+    {
+        self.route("PATCH", path, handler);
+    }
+
+    pub fn delete<F, Fut, R>(&mut self, path: &str, handler: F)
+    where
+        F: Fn(Request) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = R> + Send + 'static,
+        R: IntoResponse + 'static,
+    {
+        self.route("DELETE", path, handler);
+    }
+
     pub fn static_dir(&mut self, prefix: &str, dir: impl Into<PathBuf>) {
         let prefix = prefix.trim_end_matches('/').to_string();
         self.statics.push(StaticMount {
