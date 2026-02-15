@@ -40,9 +40,9 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
             };
 
             let method = parsed.method.unwrap_or("").to_string();
-            let path = parsed.path.unwrap_or("/").to_string();
+            let raw_path = parsed.path.unwrap_or("/").to_string();
 
-            let mut req = Request::new(method.clone(), path.clone());
+            let mut req = Request::new(method.clone(), raw_path);
             req.body = buf[body_offset..n].to_vec();
 
             for h in parsed.headers.iter() {
@@ -52,7 +52,7 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
                 );
             }
 
-            let (handler, params) = router.dispatch(&method, &path);
+            let (handler, params) = router.dispatch(&method, &req.path);
             req.params = params;
             let resp = handler(req).await;
 

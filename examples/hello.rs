@@ -42,6 +42,12 @@ struct CreateUser {
     name: String,
 }
 
+async fn search(req: Request) -> Response {
+    let q = req.query("q").unwrap_or("");
+    let page = req.query("page").unwrap_or("1");
+    Response::json(200, &serde_json::json!({"query": q, "page": page}))
+}
+
 async fn create_user(req: Request) -> Response {
     match req.json::<CreateUser>() {
         Ok(input) => {
@@ -62,6 +68,7 @@ async fn main() -> std::io::Result<()> {
     router.get("/", home);
     router.get("/hello/:name", greet);
     router.get("/users/:id", get_user);
+    router.get("/search", search);
     router.post("/users", create_user);
 
     println!("Listening on http://127.0.0.1:8080");
