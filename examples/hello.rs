@@ -1,4 +1,16 @@
-use webserver::{Request, Response, Router};
+use std::time::Instant;
+use webserver::{Next, Request, Response, Router};
+
+async fn logging(req: Request, next: Next) -> Response {
+    let start = Instant::now();
+    let method = req.method.clone();
+    let path = req.path.clone();
+
+    let resp = next.run(req).await;
+
+    println!("{method} {path} -> {} ({:?})", resp.status, start.elapsed());
+    resp
+}
 
 async fn home(_req: Request) -> Response {
     Response::new(200, "Welcome!")
@@ -15,6 +27,7 @@ async fn submit(_req: Request) -> Response {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let mut router = Router::new();
+    router.middleware(logging);
     router.get("/", home);
     router.get("/hello", hello);
     router.post("/submit", submit);

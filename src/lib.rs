@@ -1,7 +1,9 @@
+mod middleware;
 mod request;
 mod response;
 mod router;
 
+pub use middleware::Next;
 pub use request::Request;
 pub use response::Response;
 pub use router::Router;
@@ -15,7 +17,7 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
     let router = Arc::new(router);
 
     loop {
-        let (mut stream, peer) = listener.accept().await?;
+        let (mut stream, _peer) = listener.accept().await?;
         let router = Arc::clone(&router);
 
         tokio::spawn(async move {
@@ -37,13 +39,9 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
             let method = parsed.method.unwrap_or("").to_string();
             let path = parsed.path.unwrap_or("/").to_string();
 
-            println!("{peer} - {method} {path}");
-
             let req = Request::new(method.clone(), path.clone());
-            let resp = match router.dispatch(&method, &path) {
-                Some(handler) => handler(req).await,
-                None => Response::new(404, "Not Found"),
-            };
+            let handler = router.dispatch(&method, &path);
+            let resp = handler(req).await;
 
             let _ = stream.write_all(resp.to_bytes().as_slice()).await;
         });
