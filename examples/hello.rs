@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use webserver::{Next, Request, Response, Router};
 
@@ -21,15 +22,37 @@ async fn greet(req: Request) -> Response {
     Response::new(200, format!("Hello, {name}!"))
 }
 
-async fn user_post(req: Request) -> Response {
-    let user_id = req.param("user_id").unwrap_or("?");
-    let post_id = req.param("post_id").unwrap_or("?");
-    Response::new(200, format!("User {user_id}, Post {post_id}"))
+#[derive(Serialize)]
+struct User {
+    id: u64,
+    name: String,
 }
 
-async fn headers(req: Request) -> Response {
-    let ua = req.header("user-agent").unwrap_or("unknown");
-    Response::new(200, format!("Your User-Agent: {ua}"))
+async fn get_user(req: Request) -> Response {
+    let id: u64 = req.param("id").and_then(|s| s.parse().ok()).unwrap_or(0);
+    let user = User {
+        id,
+        name: format!("User {id}"),
+    };
+    Response::json(200, &user)
+}
+
+#[derive(Deserialize)]
+struct CreateUser {
+    name: String,
+}
+
+async fn create_user(req: Request) -> Response {
+    match req.json::<CreateUser>() {
+        Ok(input) => {
+            let user = User {
+                id: 1,
+                name: input.name,
+            };
+            Response::json(201, &user)
+        }
+        Err(_) => Response::json(400, &serde_json::json!({"error": "invalid JSON"})),
+    }
 }
 
 #[tokio::main]
@@ -38,8 +61,8 @@ async fn main() -> std::io::Result<()> {
     router.middleware(logging);
     router.get("/", home);
     router.get("/hello/:name", greet);
-    router.get("/users/:user_id/posts/:post_id", user_post);
-    router.get("/headers", headers);
+    router.get("/users/:id", get_user);
+    router.post("/users", create_user);
 
     println!("Listening on http://127.0.0.1:8080");
     webserver::run("127.0.0.1:8080", router).await

@@ -30,16 +30,20 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
             let mut headers = [httparse::EMPTY_HEADER; 64];
             let mut parsed = httparse::Request::new(&mut headers);
 
-            if parsed.parse(&buf[..n]).is_err() {
-                let resp = Response::new(400, "Bad Request");
-                let _ = stream.write_all(resp.to_bytes().as_slice()).await;
-                return;
-            }
+            let body_offset = match parsed.parse(&buf[..n]) {
+                Ok(httparse::Status::Complete(offset)) => offset,
+                _ => {
+                    let resp = Response::new(400, "Bad Request");
+                    let _ = stream.write_all(resp.to_bytes().as_slice()).await;
+                    return;
+                }
+            };
 
             let method = parsed.method.unwrap_or("").to_string();
             let path = parsed.path.unwrap_or("/").to_string();
 
             let mut req = Request::new(method.clone(), path.clone());
+            req.body = buf[body_offset..n].to_vec();
 
             for h in parsed.headers.iter() {
                 req.headers.insert(
