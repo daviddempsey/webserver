@@ -4,6 +4,7 @@ mod request;
 mod response;
 mod router;
 pub(crate) mod static_files;
+pub mod test;
 
 pub use error::Error;
 pub use middleware::Next;
