@@ -1,4 +1,8 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use serde::{Deserialize, Serialize};
+use webserver::health::{HealthCheck, HealthStatus};
 use webserver::{Request, Response, Router};
 
 fn setup_router() -> Router {
@@ -99,4 +103,89 @@ async fn test_wrong_method() {
     let router = setup_router();
     let resp = webserver::test::post(&router, "/", "").await;
     assert_eq!(resp.status, 404);
+}
+
+// --- Health check tests ---
+
+struct OkCheck;
+
+impl HealthCheck for OkCheck {
+    fn name(&self) -> &str {
+        "ok_service"
+    }
+    fn check(&self) -> Pin<Box<dyn Future<Output = HealthStatus> + Send>> {
+        Box::pin(async {
+            HealthStatus {
+                healthy: true,
+                detail: None,
+            }
+        })
+    }
+}
+
+struct FailCheck;
+
+impl HealthCheck for FailCheck {
+    fn name(&self) -> &str {
+        "fail_service"
+    }
+    fn check(&self) -> Pin<Box<dyn Future<Output = HealthStatus> + Send>> {
+        Box::pin(async {
+            HealthStatus {
+                healthy: false,
+                detail: Some("connection refused".into()),
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn test_health_all_healthy() {
+    let mut router = Router::new();
+    router.get(
+        "/health",
+        webserver::health::health_handler(vec![Box::new(OkCheck)]),
+    );
+
+    let resp = webserver::test::get(&router, "/health").await;
+    assert_eq!(resp.status, 200);
+
+    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    assert_eq!(body["status"], "healthy");
+    assert_eq!(body["checks"]["ok_service"]["status"], "healthy");
+    assert!(body["checks"]["ok_service"]["latency_ms"].is_number());
+}
+
+#[tokio::test]
+async fn test_health_one_unhealthy() {
+    let mut router = Router::new();
+    router.get(
+        "/health",
+        webserver::health::health_handler(vec![Box::new(OkCheck), Box::new(FailCheck)]),
+    );
+
+    let resp = webserver::test::get(&router, "/health").await;
+    assert_eq!(resp.status, 503);
+
+    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    assert_eq!(body["status"], "unhealthy");
+    assert_eq!(body["checks"]["ok_service"]["status"], "healthy");
+    assert_eq!(body["checks"]["fail_service"]["status"], "unhealthy");
+    assert_eq!(body["checks"]["fail_service"]["detail"], "connection refused");
+}
+
+#[tokio::test]
+async fn test_health_no_checks() {
+    let mut router = Router::new();
+    router.get(
+        "/health",
+        webserver::health::health_handler(vec![]),
+    );
+
+    let resp = webserver::test::get(&router, "/health").await;
+    assert_eq!(resp.status, 200);
+
+    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    assert_eq!(body["status"], "healthy");
+    assert_eq!(body["checks"], serde_json::json!({}));
 }

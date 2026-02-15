@@ -39,6 +39,7 @@ impl Response {
             404 => "Not Found",
             405 => "Method Not Allowed",
             422 => "Unprocessable Entity",
+            503 => "Service Unavailable",
             500 => "Internal Server Error",
             _ => "Unknown",
         };

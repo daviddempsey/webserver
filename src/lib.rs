@@ -1,4 +1,5 @@
 pub mod error;
+pub mod health;
 mod middleware;
 mod request;
 mod response;
@@ -7,6 +8,7 @@ pub(crate) mod static_files;
 pub mod test;
 
 pub use error::Error;
+pub use health::{HealthCheck, HealthStatus};
 pub use middleware::Next;
 pub use request::Request;
 pub use response::Response;
