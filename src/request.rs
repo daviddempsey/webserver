@@ -8,6 +8,7 @@ pub struct Request {
     pub params: HashMap<String, String>,
     pub body: Vec<u8>,
     pub extensions: HashMap<String, String>,
+    pub remote_addr: Option<String>,
 }
 
 impl Request {
@@ -25,6 +26,7 @@ impl Request {
             params: HashMap::new(),
             body: Vec::new(),
             extensions: HashMap::new(),
+            remote_addr: None,
         }
     }
 

@@ -30,7 +30,7 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
 
         tokio::select! {
             result = listener.accept() => {
-                let (mut stream, _peer): (tokio::net::TcpStream, _) = result?;
+                let (mut stream, peer): (tokio::net::TcpStream, _) = result?;
                 let router = Arc::clone(&router);
 
                 tasks.spawn(async move {
@@ -56,6 +56,7 @@ pub async fn run(addr: &str, router: Router) -> std::io::Result<()> {
                     let raw_path = parsed.path.unwrap_or("/").to_string();
 
                     let mut req = Request::new(method.clone(), raw_path);
+                    req.remote_addr = Some(peer.ip().to_string());
                     req.body = buf[body_offset..n].to_vec();
 
                     for h in parsed.headers.iter() {

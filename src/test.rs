@@ -16,6 +16,7 @@ impl<'a> TestClient<'a> {
             path: path.to_string(),
             headers: Vec::new(),
             body: Vec::new(),
+            remote_addr: None,
         }
     }
 
@@ -34,6 +35,7 @@ pub struct TestRequest<'a> {
     path: String,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    remote_addr: Option<String>,
 }
 
 impl<'a> TestRequest<'a> {
@@ -52,8 +54,14 @@ impl<'a> TestRequest<'a> {
         self.header("content-type", "application/json").body(body)
     }
 
+    pub fn remote_addr(mut self, addr: &str) -> Self {
+        self.remote_addr = Some(addr.to_string());
+        self
+    }
+
     pub async fn send(self) -> Response {
         let mut req = Request::new(self.method.clone(), self.path.clone());
+        req.remote_addr = self.remote_addr;
         req.body = self.body;
         for (k, v) in self.headers {
             req.headers.insert(k, v);
