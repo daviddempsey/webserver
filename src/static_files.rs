@@ -33,9 +33,7 @@ pub async fn serve(root: &Path, file_path: &str) -> Response {
     match tokio::fs::read(&target).await {
         Ok(contents) => {
             let content_type = mime_from_path(&target);
-            let body = String::from_utf8(contents)
-                .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).to_string());
-            Response::new(200, body).header("content-type", content_type)
+            Response::bytes(200, contents).header("content-type", content_type)
         }
         Err(_) => Response::new(404, "Not Found"),
     }

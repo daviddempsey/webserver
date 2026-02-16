@@ -42,7 +42,7 @@ async fn test_basic_get() {
     let router = setup_router();
     let resp = webserver::test::get(&router, "/").await;
     assert_eq!(resp.status, 200);
-    assert_eq!(resp.body, "Welcome!");
+    assert_eq!(resp.body_str(), "Welcome!");
 }
 
 #[tokio::test]
@@ -50,7 +50,7 @@ async fn test_path_params() {
     let router = setup_router();
     let resp = webserver::test::get(&router, "/hello/Dave").await;
     assert_eq!(resp.status, 200);
-    assert_eq!(resp.body, "Hello, Dave!");
+    assert_eq!(resp.body_str(), "Hello, Dave!");
 }
 
 #[tokio::test]
@@ -58,7 +58,7 @@ async fn test_query_string() {
     let router = setup_router();
     let resp = webserver::test::get(&router, "/search?q=rust").await;
     assert_eq!(resp.status, 200);
-    assert_eq!(resp.body, "rust");
+    assert_eq!(resp.body_str(), "rust");
 }
 
 #[tokio::test]
@@ -73,7 +73,7 @@ async fn test_post_body() {
     let router = setup_router();
     let resp = webserver::test::post(&router, "/echo", "hello").await;
     assert_eq!(resp.status, 200);
-    assert_eq!(resp.body, "hello");
+    assert_eq!(resp.body_str(), "hello");
 }
 
 #[tokio::test]
@@ -86,7 +86,7 @@ async fn test_json_request() {
         .send()
         .await;
     assert_eq!(resp.status, 201);
-    let user: User = serde_json::from_str(&resp.body).unwrap();
+    let user: User = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(user.name, "Alice");
 }
 
@@ -95,7 +95,7 @@ async fn test_json_error() {
     let router = setup_router();
     let resp = webserver::test::post(&router, "/json", "not json").await;
     assert_eq!(resp.status, 400);
-    assert!(resp.body.contains("error"));
+    assert!(resp.body_str().contains("error"));
 }
 
 #[tokio::test]
@@ -150,7 +150,7 @@ async fn test_health_all_healthy() {
     let resp = webserver::test::get(&router, "/health").await;
     assert_eq!(resp.status, 200);
 
-    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(body["status"], "healthy");
     assert_eq!(body["checks"]["ok_service"]["status"], "healthy");
     assert!(body["checks"]["ok_service"]["latency_ms"].is_number());
@@ -167,7 +167,7 @@ async fn test_health_one_unhealthy() {
     let resp = webserver::test::get(&router, "/health").await;
     assert_eq!(resp.status, 503);
 
-    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(body["status"], "unhealthy");
     assert_eq!(body["checks"]["ok_service"]["status"], "healthy");
     assert_eq!(body["checks"]["fail_service"]["status"], "unhealthy");
@@ -185,7 +185,7 @@ async fn test_health_no_checks() {
     let resp = webserver::test::get(&router, "/health").await;
     assert_eq!(resp.status, 200);
 
-    let body: serde_json::Value = serde_json::from_str(&resp.body).unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(body["status"], "healthy");
     assert_eq!(body["checks"], serde_json::json!({}));
 }

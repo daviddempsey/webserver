@@ -10,6 +10,21 @@ pub(crate) type Handler =
 pub type MiddlewareFn =
     Arc<dyn Fn(Request, Next) -> Pin<Box<dyn Future<Output = Response> + Send>> + Send + Sync>;
 
+/// Handle to the next handler in the middleware chain.
+///
+/// Received by middleware functions. Call [`Next::run`] to pass the request
+/// to the next middleware or the final handler. To short-circuit, return a
+/// [`Response`] without calling `run`.
+///
+/// ```
+/// # use webserver::{Request, Response, Next};
+/// async fn auth(req: Request, next: Next) -> Response {
+///     if req.header("authorization").is_none() {
+///         return Response::new(401, "Unauthorized");
+///     }
+///     next.run(req).await
+/// }
+/// ```
 pub struct Next {
     inner: Handler,
 }
@@ -19,6 +34,7 @@ impl Next {
         Self { inner }
     }
 
+    /// Pass the request to the next handler and await its response.
     pub async fn run(self, req: Request) -> Response {
         (self.inner)(req).await
     }

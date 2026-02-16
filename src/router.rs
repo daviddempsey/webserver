@@ -6,7 +6,12 @@ use std::sync::Arc;
 
 use crate::error::IntoResponse;
 use crate::middleware::{self, Handler, MiddlewareFn, Next};
+use crate::websocket::WebSocketStream;
 use crate::{Request, Response};
+
+pub(crate) type WsHandler = Arc<
+    dyn Fn(Request, WebSocketStream) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync,
+>;
 
 struct Route {
     method: String,
@@ -55,6 +60,11 @@ fn match_path(segments: &[Segment], path: &str) -> Option<HashMap<String, String
     Some(params)
 }
 
+struct WsRoute {
+    segments: Vec<Segment>,
+    handler: WsHandler,
+}
+
 struct StaticMount {
     prefix: String,
     root: PathBuf,
@@ -62,6 +72,7 @@ struct StaticMount {
 
 pub struct Router {
     routes: Vec<Route>,
+    ws_routes: Vec<WsRoute>,
     statics: Vec<StaticMount>,
     middlewares: Vec<MiddlewareFn>,
 }
@@ -70,6 +81,7 @@ impl Router {
     pub fn new() -> Self {
         Self {
             routes: Vec::new(),
+            ws_routes: Vec::new(),
             statics: Vec::new(),
             middlewares: Vec::new(),
         }
@@ -139,6 +151,20 @@ impl Router {
         self.route("DELETE", path, handler);
     }
 
+    pub fn ws<F, Fut>(&mut self, path: &str, handler: F)
+    where
+        F: Fn(Request, WebSocketStream) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let handler: WsHandler = Arc::new(move |req, ws| {
+            Box::pin(handler(req, ws)) as Pin<Box<dyn Future<Output = ()> + Send>>
+        });
+        self.ws_routes.push(WsRoute {
+            segments: parse_segments(path),
+            handler,
+        });
+    }
+
     pub fn static_dir(&mut self, prefix: &str, dir: impl Into<PathBuf>) {
         let prefix = prefix.trim_end_matches('/').to_string();
         self.statics.push(StaticMount {
@@ -161,16 +187,20 @@ impl Router {
         // Check static file mounts for GET requests
         if method == "GET" {
             for mount in &self.statics {
-                if let Some(file_path) = path
-                    .strip_prefix(&mount.prefix)
-                    .map(|p| p.strip_prefix('/').unwrap_or(p))
-                {
+                if let Some(rest) = path.strip_prefix(&mount.prefix) {
+                    // Boundary check: rest must be empty or start with '/'
+                    if !rest.is_empty() && !rest.starts_with('/') {
+                        continue;
+                    }
+                    let file_path = rest.strip_prefix('/').unwrap_or(rest);
                     let root = mount.root.clone();
                     let file_path = file_path.to_string();
                     let handler: Handler = Arc::new(move |_req| {
                         let root = root.clone();
                         let file_path = file_path.clone();
-                        Box::pin(async move { crate::static_files::serve(&root, &file_path).await })
+                        Box::pin(
+                            async move { crate::static_files::serve(&root, &file_path).await },
+                        )
                             as Pin<Box<dyn Future<Output = Response> + Send>>
                     });
                     return (
@@ -186,5 +216,34 @@ impl Router {
                 as Pin<Box<dyn Future<Output = Response> + Send>>
         });
         (middleware::chain(&self.middlewares, handler), HashMap::new())
+    }
+
+    pub(crate) fn dispatch_ws(
+        &self,
+        path: &str,
+    ) -> Option<(WsHandler, HashMap<String, String>)> {
+        for route in &self.ws_routes {
+            if let Some(params) = match_path(&route.segments, path) {
+                return Some((Arc::clone(&route.handler), params));
+            }
+        }
+        None
+    }
+
+    pub(crate) async fn run_middleware(&self, req: Request) -> Option<Response> {
+        if self.middlewares.is_empty() {
+            return None;
+        }
+        let pass: Handler = Arc::new(|_req| {
+            Box::pin(async { Response::new(200, "") })
+                as Pin<Box<dyn Future<Output = Response> + Send>>
+        });
+        let chained = middleware::chain(&self.middlewares, pass);
+        let resp = chained(req).await;
+        if resp.status == 200 {
+            None
+        } else {
+            Some(resp)
+        }
     }
 }
