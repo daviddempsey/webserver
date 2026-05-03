@@ -39,6 +39,13 @@ impl Response {
         self
     }
 
+    pub fn keep_alive(&self) -> bool {
+        self.headers
+            .get("connection")
+            .map(|v| !v.eq_ignore_ascii_case("close"))
+            .unwrap_or(true)
+    }
+
     pub fn body_str(&self) -> &str {
         std::str::from_utf8(&self.body).unwrap_or("")
     }
@@ -62,8 +69,14 @@ impl Response {
             _ => "Unknown",
         };
 
+        let connection = self
+            .headers
+            .get("connection")
+            .map(|v| v.as_str())
+            .unwrap_or("keep-alive");
+
         let mut header_str = format!(
-            "content-length: {}\r\nconnection: close\r\n",
+            "content-length: {}\r\nconnection: {connection}\r\n",
             self.body.len()
         );
         for (k, v) in &self.headers {

@@ -1,6 +1,20 @@
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use tokio::sync::watch;
 use webserver::{Error, Next, Request, Response, Router};
+
+// Consumer-extended runtime config: holds webserver's required fields plus
+// whatever the application needs to hot-reload.
+struct AppRuntime {
+    base: webserver::RuntimeConfig,
+    greeting: String,
+}
+
+impl AsRef<webserver::RuntimeConfig> for AppRuntime {
+    fn as_ref(&self) -> &webserver::RuntimeConfig {
+        &self.base
+    }
+}
 
 async fn logging(req: Request, next: Next) -> Response {
     let start = Instant::now();
@@ -11,10 +25,6 @@ async fn logging(req: Request, next: Next) -> Response {
 
     println!("{method} {path} -> {} ({:?})", resp.status, start.elapsed());
     resp
-}
-
-async fn home(_req: Request) -> Response {
-    Response::new(200, "Welcome!")
 }
 
 async fn greet(req: Request) -> Response {
@@ -63,9 +73,26 @@ async fn fail(_req: Request) -> Result<Response, Error> {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let install = webserver::InstallConfig::default();
+    let (_runtime_tx, runtime_rx) = watch::channel(AppRuntime {
+        base: webserver::RuntimeConfig::default(),
+        greeting: "Welcome!".into(),
+    });
+
     let mut router = Router::new();
     router.middleware(logging);
-    router.get("/", home);
+
+    // Handlers that need access to consumer-extended runtime fields capture
+    // the receiver. Snapshot the field value before any await.
+    let home_runtime = runtime_rx.clone();
+    router.get("/", move |_req| {
+        let runtime = home_runtime.clone();
+        async move {
+            let greeting = runtime.borrow().greeting.clone();
+            Response::new(200, greeting)
+        }
+    });
+
     router.get("/hello/:name", greet);
     router.get("/users/:id", get_user);
     router.get("/search", search);
@@ -73,6 +100,6 @@ async fn main() -> std::io::Result<()> {
     router.get("/fail", fail);
     router.static_dir("/static", "examples/public");
 
-    println!("Listening on http://127.0.0.1:8080");
-    webserver::run("127.0.0.1:8080", router).await
+    println!("Listening on http://{}", install.addr);
+    webserver::run(install, runtime_rx, router).await
 }
