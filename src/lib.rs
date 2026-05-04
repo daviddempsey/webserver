@@ -1,3 +1,4 @@
+mod body;
 pub mod error;
 pub mod health;
 mod middleware;
@@ -160,32 +161,49 @@ where
                             .map(|v| v.eq_ignore_ascii_case("close"))
                             .unwrap_or(false);
 
-                        // Read full body based on Content-Length
-                        let content_length: usize = req
-                            .header("content-length")
-                            .and_then(|v| v.parse().ok())
-                            .unwrap_or(0);
+                        // Body framing: Transfer-Encoding: chunked overrides
+                        // Content-Length per RFC 7230 §3.3.3.
+                        let chunked = req
+                            .header("transfer-encoding")
+                            .map(body::header_indicates_chunked)
+                            .unwrap_or(false);
+                        let content_length: usize = if chunked {
+                            0
+                        } else {
+                            req.header("content-length")
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(0)
+                        };
 
-                        if content_length > max_body {
-                            let bytes = Response::new(413, "Payload Too Large")
-                                .header("connection", "close")
-                                .to_bytes();
-                            let _ = tokio::time::timeout(io_timeout, stream.write_all(&bytes)).await;
-                            break;
-                        }
+                        let initial = buf[body_offset..n].to_vec();
+                        let body_result = body::read_body(
+                            &mut stream,
+                            initial,
+                            chunked,
+                            content_length,
+                            max_body,
+                            io_timeout,
+                        )
+                        .await;
 
-                        let mut body = Vec::with_capacity(content_length);
-                        body.extend_from_slice(&buf[body_offset..n]);
-
-                        while body.len() < content_length {
-                            let mut chunk = [0u8; 4096];
-                            match tokio::time::timeout(io_timeout, stream.read(&mut chunk)).await {
-                                Ok(Ok(n)) if n > 0 => body.extend_from_slice(&chunk[..n]),
-                                _ => break,
+                        req.body = match body_result {
+                            Ok(b) => b,
+                            Err(body::BodyError::TooLarge) => {
+                                let bytes = Response::new(413, "Payload Too Large")
+                                    .header("connection", "close")
+                                    .to_bytes();
+                                let _ = tokio::time::timeout(io_timeout, stream.write_all(&bytes)).await;
+                                break;
                             }
-                        }
-
-                        req.body = body;
+                            Err(body::BodyError::Malformed) => {
+                                let bytes = Response::new(400, "Bad Request")
+                                    .header("connection", "close")
+                                    .to_bytes();
+                                let _ = tokio::time::timeout(io_timeout, stream.write_all(&bytes)).await;
+                                break;
+                            }
+                            Err(body::BodyError::Io) => break,
+                        };
 
                         // Check for WebSocket upgrade
                         if req
